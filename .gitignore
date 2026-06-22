@@ -1,0 +1,5 @@
+# data directory
+.data/
+
+# clone of sources of services
+.repositories/

@@ -1,0 +1,8 @@
+services:
+  ollama:
+    image: ollama/ollama:${OLLAMA_DOCKER_TAG-rocm}
+    environment:
+      OLLAMA_GPU_OVERHEAD: ${OLLAMA_GPU_OVERHEAD:-1610612736}
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri

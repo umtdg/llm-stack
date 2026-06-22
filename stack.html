@@ -1,0 +1,542 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Local-first RAG + agent stack — reference architecture</title>
+<style>
+  :root{
+    --bg:#f7f8fa; --card:#ffffff; --ink:#14171c; --muted:#5a616e;
+    --line:#6b7280; --rule:#dde1e7; --accent:#3b4cca;
+    --color-border-secondary:#b9c0cc;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0;background:var(--bg);color:var(--ink);
+    font-family:var(--sans);line-height:1.62;
+    font-size:16px;
+  }
+  .wrap{max-width:880px;margin:0 auto;padding:56px 24px 96px}
+  header{border-bottom:1px solid var(--rule);padding-bottom:28px;margin-bottom:8px}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--accent);margin:0 0 14px}
+  h1{font-size:34px;line-height:1.12;letter-spacing:-.02em;font-weight:680;margin:0 0 16px}
+  .lede{font-size:17px;color:var(--muted);margin:0;max-width:64ch}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin:22px 0 0}
+  .chip{font-family:var(--mono);font-size:12px;color:var(--ink);
+    background:#eef0f4;border:1px solid var(--rule);border-radius:6px;padding:5px 9px}
+  .chip b{color:var(--accent);font-weight:600}
+  section{margin-top:52px}
+  .sec-eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--muted);margin:0 0 6px}
+  h2{font-size:23px;letter-spacing:-.01em;font-weight:660;margin:0 0 4px}
+  h3{font-size:15px;font-weight:660;margin:30px 0 6px}
+  p{margin:14px 0;max-width:68ch}
+  figure{margin:26px 0 8px;background:var(--card);border:1px solid var(--rule);
+    border-radius:12px;padding:22px 18px 14px}
+  figure svg{display:block;width:100%;height:auto}
+  figcaption{font-family:var(--mono);font-size:12px;color:var(--muted);
+    margin-top:12px;padding-top:10px;border-top:1px solid var(--rule)}
+  ul{margin:12px 0;padding-left:0;list-style:none;max-width:70ch}
+  ul li{position:relative;padding-left:18px;margin:9px 0}
+  ul li::before{content:"";position:absolute;left:2px;top:11px;width:5px;height:5px;
+    background:var(--accent);border-radius:50%}
+  .proto{margin-top:22px}
+  .proto h3{display:flex;align-items:baseline;gap:10px;margin-bottom:2px}
+  .proto h3 .tag{font-family:var(--mono);font-size:11px;letter-spacing:.04em;
+    color:#fff;background:var(--accent);border-radius:5px;padding:3px 7px;font-weight:600}
+  mono,.m{font-family:var(--mono);font-size:.9em;background:#eef0f4;
+    border:1px solid var(--rule);border-radius:4px;padding:1px 5px}
+  .note{font-size:14.5px;color:var(--muted)}
+  /* ---- shared SVG styling so embedded diagrams render standalone ---- */
+  svg text.th{fill:var(--ink);font:600 14px var(--sans)}
+  svg text.ts{fill:var(--muted);font:400 12px var(--sans)}
+  svg .arr{stroke:var(--line);stroke-width:1.5;fill:none}
+  svg .node rect{stroke-width:1}
+  .c-purple rect{fill:#ede9fe;stroke:#8b7ad6}
+  .c-teal rect{fill:#d8f1ec;stroke:#3aa697}
+  .c-blue rect{fill:#dde8fb;stroke:#5180c2}
+  .c-coral rect{fill:#fde3db;stroke:#db8064}
+  .c-gray rect{fill:#eceef2;stroke:#a3abb8}
+  /* ---- comparison tables + pick callouts (added for the tool catalog) ---- */
+  .layer{margin-top:38px;padding-top:30px;border-top:1px solid var(--rule)}
+  .layer:first-of-type{border-top:0;padding-top:0}
+  .layer h3{display:flex;align-items:baseline;gap:10px;font-size:17px;margin:0 0 2px}
+  .layer h3 .role{font-family:var(--mono);font-size:11px;letter-spacing:.04em;
+    color:var(--accent);background:#eef0f4;border:1px solid var(--rule);
+    border-radius:5px;padding:3px 7px;font-weight:600;text-transform:uppercase}
+  .layer .sub{color:var(--muted);font-size:14.5px;margin:6px 0 14px;max-width:70ch}
+  .tbl-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;
+    border:1px solid var(--rule);border-radius:10px;background:var(--card)}
+  table.cmp{border-collapse:collapse;width:100%;min-width:560px;font-size:14px}
+  table.cmp th,table.cmp td{text-align:left;padding:11px 14px;vertical-align:top;
+    border-bottom:1px solid var(--rule)}
+  table.cmp thead th{font-family:var(--mono);font-size:11px;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--muted);font-weight:600;
+    background:#f1f3f7;white-space:nowrap}
+  table.cmp tbody tr:last-child td{border-bottom:0}
+  table.cmp td:first-child{font-weight:660;white-space:nowrap}
+  table.cmp tr.top{background:#f3f2fd}
+  table.cmp tr.top td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+  .star{color:var(--accent);font-weight:700;margin-left:5px;font-size:12px}
+  .pick{margin:16px 0 0;background:#f3f2fd;border:1px solid #c8c2f0;
+    border-radius:10px;padding:13px 16px;font-size:14.5px;max-width:none}
+  .pick b{color:var(--accent)}
+  .pick .lbl{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--accent);display:block;margin-bottom:5px}
+  .legend{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:10px 0 0}
+  .legend .star{margin:0 4px 0 0}
+  @media (max-width:560px){.wrap{padding:36px 16px 72px}h1{font-size:27px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">Reference architecture · tool-agnostic</p>
+  <h1>Local-first RAG&nbsp;+&nbsp;agent stack</h1>
+  <p class="lede">Role layers and the connections between them. Three protocol families cross the entire
+  system; every box is a role with an off-the-shelf implementation, so the only thing left to build is the wiring.</p>
+  <div class="chips">
+    <span class="chip"><b>A</b> &nbsp;model calls — OpenAI-compatible /v1 HTTP + SSE</span>
+    <span class="chip"><b>B</b> &nbsp;knowledge access — MCP / retrieval HTTP API</span>
+    <span class="chip"><b>C</b> &nbsp;datastores — DB drivers / wire protocols / object storage</span>
+  </div>
+</header>
+
+<!-- ============================ VIEW 1 ============================ -->
+<section>
+  <p class="sec-eyebrow">View 1 / 3 — logical</p>
+  <h2>Layers and the protocols connecting them</h2>
+  <p>Three independent consumers sit on top: the chat client, the eval bench, and the knowledge base.
+  Chat and eval both consume the knowledge base for retrieval and the model gateway for generation;
+  the knowledge base is itself a consumer of the gateway. The gateway is the single fan-out point to
+  every model backend.</p>
+
+  <figure>
+    <svg viewBox="0 0 680 520" role="img" aria-label="Logical role layers and the protocols connecting them">
+      <title>Logical role layers and the protocols connecting them</title>
+      <defs><marker id="arw1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+      <g class="node c-purple"><rect x="140" y="44" width="180" height="52" rx="8" stroke-width="0.5"/><text class="th" x="230" y="64" text-anchor="middle" dominant-baseline="central">Chat client / agent</text><text class="ts" x="230" y="82" text-anchor="middle" dominant-baseline="central">interactive surface</text></g>
+      <g class="node c-purple"><rect x="360" y="44" width="180" height="52" rx="8" stroke-width="0.5"/><text class="th" x="450" y="64" text-anchor="middle" dominant-baseline="central">Eval bench</text><text class="ts" x="450" y="82" text-anchor="middle" dominant-baseline="central">offline scoring</text></g>
+      <g class="node c-teal"><rect x="130" y="170" width="420" height="56" rx="8" stroke-width="0.5"/><text class="th" x="340" y="190" text-anchor="middle" dominant-baseline="central">Knowledge base (RAG service)</text><text class="ts" x="340" y="208" text-anchor="middle" dominant-baseline="central">ingestion + retrieval</text></g>
+      <g class="node c-blue"><rect x="200" y="300" width="280" height="56" rx="8" stroke-width="0.5"/><text class="th" x="340" y="320" text-anchor="middle" dominant-baseline="central">Model gateway / router</text><text class="ts" x="340" y="338" text-anchor="middle" dominant-baseline="central">inference + embeddings</text></g>
+      <g class="node c-coral"><rect x="120" y="420" width="190" height="52" rx="8" stroke-width="0.5"/><text class="th" x="215" y="440" text-anchor="middle" dominant-baseline="central">Self-hosted engines</text><text class="ts" x="215" y="458" text-anchor="middle" dominant-baseline="central">local inference</text></g>
+      <g class="node c-coral"><rect x="370" y="420" width="190" height="52" rx="8" stroke-width="0.5"/><text class="th" x="465" y="440" text-anchor="middle" dominant-baseline="central">Proprietary providers</text><text class="ts" x="465" y="458" text-anchor="middle" dominant-baseline="central">external APIs</text></g>
+      <line x1="230" y1="96" x2="230" y2="170" class="arr" marker-end="url(#arw1)"/>
+      <text class="ts" x="238" y="130" dominant-baseline="central">MCP / retrieval API</text>
+      <line x1="450" y1="96" x2="450" y2="170" class="arr" marker-end="url(#arw1)"/>
+      <text class="ts" x="458" y="130" dominant-baseline="central">retrieval API</text>
+      <path d="M150 96 L150 128 L70 128 L70 280 L230 280 L230 300" class="arr" fill="none" marker-end="url(#arw1)"/>
+      <text class="ts" x="78" y="250" dominant-baseline="central">OpenAI /v1 + SSE</text>
+      <path d="M530 96 L530 128 L610 128 L610 280 L450 280 L450 300" class="arr" fill="none" marker-end="url(#arw1)"/>
+      <text class="ts" x="536" y="250" dominant-baseline="central">OpenAI /v1</text>
+      <line x1="340" y1="226" x2="340" y2="300" class="arr" marker-end="url(#arw1)"/>
+      <text class="ts" x="348" y="263" dominant-baseline="central">OpenAI /v1</text>
+      <path d="M270 356 L215 420" class="arr" fill="none" marker-end="url(#arw1)"/>
+      <text class="ts" x="150" y="392" dominant-baseline="central">/v1 (LAN)</text>
+      <path d="M410 356 L465 420" class="arr" fill="none" marker-end="url(#arw1)"/>
+      <text class="ts" x="470" y="392" dominant-baseline="central">HTTPS (WAN)</text>
+      <text class="ts" x="40" y="500" dominant-baseline="central">Edges are network calls across hosts; loopback / IPC when co-located.</text>
+    </svg>
+    <figcaption>Fig. 1 — consumers (purple) · retrieval backend (teal) · model backend (blue) · providers (coral)</figcaption>
+  </figure>
+
+  <h3>Layer roles</h3>
+  <ul>
+    <li><b>Chat client / agent</b> — the interactive surface. Captures input, renders, runs the agent loop. Calls the gateway for generation and the knowledge base for retrieval; owns a private conversation store.</li>
+    <li><b>Eval bench</b> — offline scoring. Calls the knowledge base to score the live retrieval pipeline and the gateway for query embeddings and judge-LLM calls; owns a private results store.</li>
+    <li><b>Knowledge base (RAG service)</b> — owns ingestion and retrieval and the four backing stores. The only layer that touches the stores; everything above sees only its retrieval API.</li>
+    <li><b>Model gateway / router</b> — one OpenAI-compatible endpoint in front of all backends. Routing, key custody, budgets, fallback. The single egress chokepoint for model traffic.</li>
+    <li><b>Self-hosted engines</b> — local inference and embedding serving.</li>
+    <li><b>Proprietary providers</b> — external first-party / cloud model APIs reached by key.</li>
+  </ul>
+
+  <h3>Every connection, by protocol family</h3>
+
+  <div class="proto">
+    <h3><span class="tag">A</span> Model calls — OpenAI-compatible /v1 over HTTP, streamed with SSE</h3>
+    <ul>
+      <li>Chat client → gateway: chat completions for generation and the agent loop.</li>
+      <li>Eval bench → gateway: query embeddings plus judge-LLM calls.</li>
+      <li>Knowledge base → gateway: ingest embeddings on <span class="m">/embeddings</span>, entity/relation extraction on <span class="m">/chat/completions</span>, and query-time embeddings.</li>
+      <li>Gateway → self-hosted engines: <span class="m">/v1</span> over the LAN (loopback if co-located).</li>
+      <li>Gateway → proprietary providers: the provider's HTTPS API (native or an OpenAI-compat shim) over the WAN.</li>
+    </ul>
+  </div>
+
+  <div class="proto">
+    <h3><span class="tag">B</span> Knowledge access — MCP or a retrieval HTTP API</h3>
+    <ul>
+      <li>Chat client → knowledge base: retrieval; request/response returning ranked chunks plus citations.</li>
+      <li>Eval bench → knowledge base: same edge, used to score retrieval quality.</li>
+    </ul>
+  </div>
+
+  <div class="proto">
+    <h3><span class="tag">C</span> Datastore access</h3>
+    <ul>
+      <li>Internal to the knowledge base — detailed in View 2.</li>
+    </ul>
+  </div>
+
+  <h3>Control / admin and secrets (off the data path)</h3>
+  <p class="note">A control plane feeds the gateway's routing/registry table and drives self-hosted engine
+  lifecycle (pull / deploy / health) over an admin HTTP or orchestration API. The gateway reads provider
+  keys from a secret store (OS keychain or secret manager) via a local credential read. Each consumer also
+  owns a private store off the shared path — the chat client a conversation store, the eval bench a
+  results store — typically SQL or embedded.</p>
+</section>
+
+<!-- ============================ VIEW 2 ============================ -->
+<section>
+  <p class="sec-eyebrow">View 2 / 3 — knowledge base internals</p>
+  <h2>The ingest and query paths, and where the stores live</h2>
+  <p>Two flows run through one service. Ingest <em>writes</em>; query <em>reads</em>. The knowledge base
+  is the only component that touches the vector, graph, object, and metadata stores.</p>
+
+  <figure>
+    <svg viewBox="0 0 680 400" role="img" aria-label="Knowledge base internal data path and its backing stores">
+      <title>Knowledge base internal data path and its backing stores</title>
+      <defs><marker id="arw2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+      <text class="ts" x="280" y="76" text-anchor="middle" dominant-baseline="central">documents</text>
+      <line x1="280" y1="86" x2="280" y2="120" class="arr" marker-end="url(#arw2)"/>
+      <text class="ts" x="400" y="76" text-anchor="middle" dominant-baseline="central">query</text>
+      <line x1="400" y1="86" x2="400" y2="120" class="arr" marker-end="url(#arw2)"/>
+      <g class="c-teal"><rect x="220" y="120" width="240" height="140" rx="16" stroke-width="0.5"/>
+        <text class="th" x="340" y="146" text-anchor="middle" dominant-baseline="central">Knowledge base service</text>
+        <text class="ts" x="340" y="170" text-anchor="middle" dominant-baseline="central">ingest writes · query reads</text>
+        <text class="ts" x="340" y="206" text-anchor="middle" dominant-baseline="central">chunk · embed · extract</text>
+        <text class="ts" x="340" y="227" text-anchor="middle" dominant-baseline="central">search · traverse · fuse</text></g>
+      <g class="node c-blue"><rect x="40" y="160" width="140" height="60" rx="8" stroke-width="0.5"/><text class="th" x="110" y="184" text-anchor="middle" dominant-baseline="central">Model gateway</text><text class="ts" x="110" y="202" text-anchor="middle" dominant-baseline="central">embed · extract LLM</text></g>
+      <text class="ts" x="110" y="148" text-anchor="middle" dominant-baseline="central">OpenAI /v1</text>
+      <line x1="220" y1="200" x2="184" y2="200" class="arr" marker-end="url(#arw2)"/>
+      <text class="ts" x="510" y="186" text-anchor="middle" dominant-baseline="central">retrieval API</text>
+      <line x1="460" y1="200" x2="560" y2="200" class="arr" marker-end="url(#arw2)"/>
+      <g class="node c-purple"><rect x="40" y="300" width="140" height="56" rx="8" stroke-width="0.5"/><text class="th" x="110" y="320" text-anchor="middle" dominant-baseline="central">Vector store</text><text class="ts" x="110" y="338" text-anchor="middle" dominant-baseline="central">ANN index</text></g>
+      <g class="node c-purple"><rect x="200" y="300" width="140" height="56" rx="8" stroke-width="0.5"/><text class="th" x="270" y="320" text-anchor="middle" dominant-baseline="central">Graph store</text><text class="ts" x="270" y="338" text-anchor="middle" dominant-baseline="central">entities · relations</text></g>
+      <g class="node c-purple"><rect x="360" y="300" width="140" height="56" rx="8" stroke-width="0.5"/><text class="th" x="430" y="320" text-anchor="middle" dominant-baseline="central">Object store</text><text class="ts" x="430" y="338" text-anchor="middle" dominant-baseline="central">raw docs · chunks</text></g>
+      <g class="node c-purple"><rect x="520" y="300" width="120" height="56" rx="8" stroke-width="0.5"/><text class="th" x="580" y="320" text-anchor="middle" dominant-baseline="central">Metadata DB</text><text class="ts" x="580" y="338" text-anchor="middle" dominant-baseline="central">collections</text></g>
+      <line x1="250" y1="260" x2="110" y2="300" class="arr" marker-end="url(#arw2)"/>
+      <text class="ts" x="64" y="290" dominant-baseline="central">ANN driver</text>
+      <line x1="300" y1="260" x2="270" y2="300" class="arr" marker-end="url(#arw2)"/>
+      <text class="ts" x="232" y="290" dominant-baseline="central">graph query</text>
+      <line x1="380" y1="260" x2="430" y2="300" class="arr" marker-end="url(#arw2)"/>
+      <text class="ts" x="392" y="290" dominant-baseline="central">S3 / FS</text>
+      <line x1="440" y1="260" x2="580" y2="300" class="arr" marker-end="url(#arw2)"/>
+      <text class="ts" x="544" y="290" dominant-baseline="central">SQL</text>
+      <text class="ts" x="40" y="380" dominant-baseline="central">Each store is embedded (in-process) or a networked service — the protocol changes with deployment, the role does not.</text>
+    </svg>
+    <figcaption>Fig. 2 — one service, two flows, four stores</figcaption>
+  </figure>
+
+  <h3>Ingest writes</h3>
+  <p>A document arrives; the service chunks it, calls the gateway for chunk embeddings and writes vectors
+  to the <b>vector store</b>, calls the gateway for entity/relation extraction and writes nodes and edges
+  to the <b>graph store</b>, stores the raw file and chunk text in the <b>object store</b>, and records
+  collection and chunk metadata — including which embedding model the collection is bound to — in the
+  <b>metadata DB</b>.</p>
+
+  <h3>Query reads</h3>
+  <p>A query arrives; the service embeds it via the gateway, runs ANN search against the vector store and
+  a neighborhood traversal against the graph store, fuses and ranks the two result sets, hydrates chunk
+  text from the object store, and returns ranked context over the retrieval API (or MCP).</p>
+
+  <h3>Store roles vs protocols</h3>
+  <ul>
+    <li><b>Vector store</b> — reached through an ANN driver: an in-process library call when embedded, gRPC/HTTP when it's a server.</li>
+    <li><b>Graph store</b> — a graph query: embedded edges, a Bolt/Cypher session, or SQL.</li>
+    <li><b>Object store</b> — S3-compatible API or a filesystem path.</li>
+    <li><b>Metadata DB</b> — SQL, embedded or networked.</li>
+  </ul>
+  <p class="note">The embedder is per-collection metadata, so a collection's vector index has a fixed
+  dimension; you generally keep one index per collection rather than one shared table.</p>
+</section>
+
+<!-- ============================ VIEW 3 ============================ -->
+<section>
+  <p class="sec-eyebrow">View 3 / 3 — deployment</p>
+  <h2>Network topology and where each component can run</h2>
+  <p>The only component that must be remote is the proprietary providers. Everything else can be fully
+  local, and the gateway is the single egress for all model traffic.</p>
+
+  <figure>
+    <svg viewBox="0 0 680 390" role="img" aria-label="Deployment and network topology">
+      <title>Deployment and network topology</title>
+      <defs><marker id="arw3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+      <rect x="40" y="60" width="430" height="300" rx="16" fill="none" stroke="var(--color-border-secondary)" stroke-width="1" stroke-dasharray="5 5"/>
+      <text class="th" x="56" y="84" dominant-baseline="central">Local / self-hosted zone</text>
+      <g class="node c-purple"><rect x="70" y="102" width="360" height="44" rx="8" stroke-width="0.5"/><text class="th" x="250" y="124" text-anchor="middle" dominant-baseline="central">Consumers — chat client · eval bench</text></g>
+      <g class="node c-teal"><rect x="70" y="160" width="360" height="44" rx="8" stroke-width="0.5"/><text class="th" x="250" y="182" text-anchor="middle" dominant-baseline="central">Knowledge base + its data stores</text></g>
+      <g class="node c-coral"><rect x="70" y="218" width="170" height="44" rx="8" stroke-width="0.5"/><text class="th" x="155" y="240" text-anchor="middle" dominant-baseline="central">Self-hosted engines</text></g>
+      <g class="node c-blue"><rect x="260" y="218" width="170" height="44" rx="8" stroke-width="0.5"/><text class="th" x="345" y="240" text-anchor="middle" dominant-baseline="central">Model gateway</text></g>
+      <line x1="250" y1="146" x2="250" y2="160" class="arr" marker-end="url(#arw3)"/>
+      <line x1="345" y1="204" x2="345" y2="218" class="arr" marker-end="url(#arw3)"/>
+      <line x1="155" y1="204" x2="155" y2="218" class="arr" marker-end="url(#arw3)"/>
+      <line x1="260" y1="240" x2="242" y2="240" class="arr" marker-end="url(#arw3)"/>
+      <text class="ts" x="70" y="296" dominant-baseline="central">same host: loopback / IPC / embedded</text>
+      <text class="ts" x="70" y="316" dominant-baseline="central">same LAN: HTTP / gRPC over TCP</text>
+      <g class="node c-gray"><rect x="520" y="102" width="120" height="44" rx="8" stroke-width="0.5"/><text class="th" x="580" y="118" text-anchor="middle" dominant-baseline="central">Managed DB</text><text class="ts" x="580" y="134" text-anchor="middle" dominant-baseline="central">if remote</text></g>
+      <g class="node c-coral"><rect x="520" y="218" width="120" height="44" rx="8" stroke-width="0.5"/><text class="th" x="580" y="232" text-anchor="middle" dominant-baseline="central">Proprietary</text><text class="ts" x="580" y="250" text-anchor="middle" dominant-baseline="central">external APIs</text></g>
+      <text class="ts" x="580" y="290" text-anchor="middle" dominant-baseline="central">External (WAN)</text>
+      <line x1="430" y1="170" x2="518" y2="124" class="arr" marker-end="url(#arw3)"/>
+      <text class="ts" x="440" y="138" dominant-baseline="central">TCP / TLS</text>
+      <line x1="430" y1="240" x2="518" y2="240" class="arr" marker-end="url(#arw3)"/>
+      <text class="ts" x="438" y="208" dominant-baseline="central">HTTPS (sole egress)</text>
+    </svg>
+    <figcaption>Fig. 3 — one trust boundary; the gateway is the only model egress</figcaption>
+  </figure>
+
+  <h3>Per-component placement</h3>
+  <ul>
+    <li><b>Chat client</b> — desktop app (everything on one host) or a workstation talking to a LAN gateway and KB.</li>
+    <li><b>Knowledge base service</b> — same host as the client, or a shared LAN service. Stores embed in-process (one binary, zero network) or split onto a DB node.</li>
+    <li><b>Eval bench</b> — same host, a separate dev box, or CI. Offline, so never needs co-location.</li>
+    <li><b>Model gateway</b> — co-located (loopback), a LAN GPU node, or a hosted instance. Routing chokepoint regardless of placement.</li>
+    <li><b>Self-hosted engines</b> — same host (small models) or a GPU node on the LAN.</li>
+    <li><b>Proprietary providers</b> — always WAN/HTTPS. The only forced-remote component.</li>
+    <li><b>Vector / graph / object / metadata stores</b> — each independently embedded (in-process, same host) or a networked service (LAN or managed cloud).</li>
+  </ul>
+  <p class="note">The gateway is the only path to external providers, so it is where egress policy is
+  enforced. The data planes that hold the corpus (KB + stores) can stay entirely on-prem even while
+  generation uses a proprietary model. Per-collection policy decides whether a collection's content is
+  ever allowed across that boundary.</p>
+</section>
+
+<!-- ============================ BUILD VS ADOPT ============================ -->
+<section>
+  <p class="sec-eyebrow">Consequence</p>
+  <h2>Build vs adopt</h2>
+  <p>Every box and every store in these views is a role with an off-the-shelf implementation and a
+  standard protocol. Adopt all of them: engines, gateway/router, vector store, graph store, object store,
+  metadata DB, the RAG/KB framework, the eval framework, the MCP server, the chat shell. Building any of
+  them is rebuilding a solved layer.</p>
+  <p>What does not exist as a single off-the-shelf product is the wiring itself: the control plane that
+  binds a collection to an embedder, routes per-chat and per-message to a collection and a model, enforces
+  the egress policy at the gateway, and drives the eval → fine-tune → redeploy loop end to end. That
+  orchestration spans four layers and is owned by none of them. That — plus the product's UX — is the
+  entire custom surface.</p>
+  <p><b>The test:</b> if what you build is that glue, it makes sense; if it starts reimplementing a layer
+  in these diagrams, it does not.</p>
+</section>
+
+<!-- ============================ TOOL CATALOG ============================ -->
+<section>
+  <p class="sec-eyebrow">Catalog — adopt which</p>
+  <h2>Existing tools, per layer</h2>
+  <p>One table per role. Each row is a real, currently-maintained implementation of that role; the
+  rightmost column is the deciding trade-off, not a feature dump. Rows are ordered by fit for the
+  local-first, self-hosted bias of this architecture — managed-only options appear where they are the
+  honest answer and are flagged as such. Landscape verified June 2026; versions and star counts move,
+  so confirm against each project before committing.</p>
+  <p class="legend"><span class="star">★</span> top choice for this stack — defaults to reach for unless a row's trade-off says otherwise.</p>
+
+  <!-- Self-hosted engines -->
+  <div class="layer">
+    <h3><span class="role">Self-hosted engines</span> inference &amp; embedding serving</h3>
+    <p class="sub">Sits behind the gateway, speaks OpenAI <span class="m">/v1</span>. The split that matters is
+    continuous batching: serving engines pack concurrent requests into one GPU pass, single-user engines do not.</p>
+    <div class="tbl-scroll">
+      <table class="cmp">
+        <thead><tr><th>Tool</th><th>Shape</th><th>Best for</th><th>Deciding trade-off</th></tr></thead>
+        <tbody>
+          <tr class="top"><td>Ollama <span class="star">★</span></td><td>single-user runtime</td><td>laptops, prototyping, internal demos</td><td>one command to first token; built on llama.cpp, GGUF-native — but narrow concurrency, not for multi-tenant serving.</td></tr>
+          <tr class="top"><td>vLLM <span class="star">★</span></td><td>production server</td><td>multi-user GPU box, stable APIs, mixed open models</td><td>PagedAttention + continuous batching; broadest hardware and quant coverage; ships OpenAI, Anthropic-Messages and gRPC surfaces. The default served-local choice.</td></tr>
+          <tr><td>SGLang</td><td>production server</td><td>agent loops, reused system prompts, RAG contexts, VLMs</td><td>prefix caching pays off when prompts repeat; strong for structured/constrained decoding. Reach for it over vLLM when the workload is prefix-heavy.</td></tr>
+          <tr><td>llama.cpp</td><td>portable runtime</td><td>CPU-only, offline, heterogeneous hardware</td><td>runs where others won't; lower throughput, manual ops. The substrate under Ollama and LM Studio.</td></tr>
+          <tr><td>LM Studio</td><td>desktop GUI</td><td>single-user laptops wanting a UI, not a CLI</td><td>friendliest local on-ramp; serves an OpenAI-compatible endpoint, but single-user like Ollama.</td></tr>
+          <tr><td>TensorRT-LLM</td><td>production server</td><td>peak throughput on NVIDIA-only fleets</td><td>highest tokens/sec via compiled engines; per-model build steps and NVIDIA lock-in raise operational cost.</td></tr>
+          <tr><td>TGI</td><td>(legacy)</td><td>existing deployments only</td><td>archived / maintenance mode since early 2026; Hugging Face now points to vLLM, SGLang, llama.cpp, MLX. Not for new builds.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="pick"><span class="lbl">Pick</span><b>Ollama</b> for dev and single-user. <b>vLLM</b> as the served-local default. <b>SGLang</b> when the workload is agentic or prompt-prefix-heavy. All three speak <span class="m">/v1</span>, so the gateway hides which one is behind it.</p>
+  </div>
+
+  <!-- Model gateway -->
+  <div class="layer">
+    <h3><span class="role">Model gateway / router</span> single model-traffic chokepoint</h3>
+    <p class="sub">One OpenAI-compatible endpoint in front of every backend; the place egress policy, keys, budgets and
+    fallback live. For this stack the gateway must be self-hostable <em>and</em> able to front self-hosted engines.</p>
+    <div class="tbl-scroll">
+      <table class="cmp">
+        <thead><tr><th>Tool</th><th>Model</th><th>Best for</th><th>Deciding trade-off</th></tr></thead>
+        <tbody>
+          <tr class="top"><td>LiteLLM <span class="star">★</span></td><td>self-hosted OSS proxy</td><td>local-first control, team budgets, zero markup</td><td>100+ providers behind one <span class="m">/v1</span>; virtual keys, budget caps, fallback; fronts self-hosted engines; traffic stays in your infra (~8ms P95). The fit for this architecture.</td></tr>
+          <tr><td>Portkey</td><td>managed or self-host</td><td>enterprise control plane</td><td>semantic caching, guardrails, deep observability, MCP integration, sub-ms added latency; richest feature set, heavier to run self-hosted.</td></tr>
+          <tr><td>OpenRouter</td><td>SaaS marketplace</td><td>fast multi-model exploration, zero infra</td><td>300+ models on one key, but routes only to upstream providers — no self-hosted-model support — and adds 100–150ms. Good for prototyping, not the local-first egress point.</td></tr>
+          <tr><td>Cloudflare / Vercel AI Gateway</td><td>platform-bundled</td><td>apps already on that platform</td><td>near-zero friction inside the platform; lock-in and simpler routing outside it.</td></tr>
+          <tr><td>Kong AI Gateway</td><td>plugin on Kong</td><td>teams already running Kong</td><td>reuses existing API-gateway ops; only sensible if Kong is already in place.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="pick"><span class="lbl">Pick</span><b>LiteLLM</b> — the only common gateway that is self-hostable, keeps prompt data in your infrastructure, and fronts both self-hosted engines and proprietary providers. Prototype against <b>OpenRouter</b> if breadth-first, then move the egress point to self-hosted LiteLLM.</p>
+  </div>
+
+  <!-- Vector store -->
+  <div class="layer">
+    <h3><span class="role">Vector store</span> ANN index, the semantic half of retrieval</h3>
+    <p class="sub">Reached through an ANN driver — an in-process call when embedded, gRPC/HTTP when it's a server. The
+    embedded-vs-networked axis maps directly onto the local-first deployment story.</p>
+    <div class="tbl-scroll">
+      <table class="cmp">
+        <thead><tr><th>Tool</th><th>Shape</th><th>Best for</th><th>Deciding trade-off</th></tr></thead>
+        <tbody>
+          <tr class="top"><td>LanceDB <span class="star">★</span></td><td>embedded (in-process)</td><td>desktop apps, edge, single-binary KB</td><td>zero-copy Lance columnar format, sits directly on object storage, no server to run — the embedded-store ideal. Newer; concurrent multi-process access still maturing.</td></tr>
+          <tr class="top"><td>Qdrant <span class="star">★</span></td><td>self-hosted server</td><td>dedicated vector DB with deep metadata filtering</td><td>Rust, widely cited as the easiest dedicated store to self-host; strong filtered-query performance and hybrid + late-interaction search. The server default when you outgrow embedded.</td></tr>
+          <tr class="top"><td>pgvector <span class="star">★</span></td><td>Postgres extension</td><td>teams already on Postgres, ≤ ~50M vectors</td><td>just Postgres — ACID, full SQL, one less moving part; can also serve as the metadata DB. v0.9 added sparse vectors and speedups. Tune for larger sets.</td></tr>
+          <tr><td>Weaviate</td><td>self-hosted server</td><td>built-in hybrid + multimodal, GraphQL</td><td>modular with vectorizer modules (insert text, get vectors); powerful but overbuilt for simple cases.</td></tr>
+          <tr><td>Milvus</td><td>self-hosted / cloud</td><td>billion-scale, high-throughput</td><td>the first stop for very large corpora; heavier ops than Qdrant. Zilliz Cloud is the managed form.</td></tr>
+          <tr><td>Chroma</td><td>embedded / light server</td><td>prototyping, small-to-mid corpora</td><td>simplest DX; production-ready at modest scale on a single small VPS.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="pick"><span class="lbl">Pick</span><b>LanceDB</b> for a single-binary, embedded KB; <b>Qdrant</b> as the self-hosted server once retrieval is a shared LAN service; <b>pgvector</b> if Postgres is already in the stack — it collapses the vector and metadata stores into one. The store is ~5–10% of RAG quality; chunking, embedding and retrieval pipeline matter more.</p>
+  </div>
+
+  <!-- Graph store -->
+  <div class="layer">
+    <h3><span class="role">Graph store</span> entities &amp; relations, the relational half</h3>
+    <p class="sub">Holds extracted nodes and edges for multi-hop traversal. Same embedded-vs-server axis; embedded graph
+    databases have recently collapsed the "extra server to run" objection that kept many stacks vector-only.</p>
+    <div class="tbl-scroll">
+      <table class="cmp">
+        <thead><tr><th>Tool</th><th>Shape</th><th>Best for</th><th>Deciding trade-off</th></tr></thead>
+        <tbody>
+          <tr class="top"><td>Kuzu <span class="star">★</span></td><td>embedded (in-process)</td><td>local-first graph memory, no separate server</td><td>removes the main operational objection to graphs for small/mid deployments; smaller ecosystem and less horizontal scale than Neo4j.</td></tr>
+          <tr class="top"><td>Neo4j <span class="star">★</span></td><td>self-hosted server</td><td>production GraphRAG, auditable Cypher paths</td><td>the hiring-market default; mature Cypher + property graph, the common GraphRAG backend. Operational weight and ontology design are the cost.</td></tr>
+          <tr><td>Memgraph</td><td>in-memory server</td><td>real-time, millisecond traversal</td><td>Neo4j-driver and Cypher compatible; in-memory storage is pricier for very large graphs.</td></tr>
+          <tr><td>FalkorDB</td><td>self-hosted server</td><td>low-latency GraphRAG retrieval</td><td>compact, Redis-module lineage; smaller community than Neo4j.</td></tr>
+          <tr><td>ArangoDB</td><td>self-hosted server</td><td>multi-model (graph + document) in one engine</td><td>fewer moving parts if you also need document storage; not graph-specialised.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="pick"><span class="lbl">Pick</span><b>Kuzu</b> when the KB ships as one local binary; <b>Neo4j</b> when retrieval is a shared service and auditable traversal matters; <b>Memgraph</b> for real-time low-latency needs. The graph store is optional — add it only when the query distribution genuinely needs multi-hop reasoning, not before.</p>
+  </div>
+
+  <!-- KB / RAG framework -->
+  <div class="layer">
+    <h3><span class="role">Knowledge base</span> the RAG framework that owns ingest + retrieval</h3>
+    <p class="sub">Two shapes hide here, and the difference decides how much you build. A <b>deployable service</b> already
+    exposes a retrieval API/MCP — it <em>is</em> the KB box. A <b>library</b> is code you import; to become the KB box it
+    needs a service shell, a retrieval API/MCP surface, and any pipeline stage the library leaves out. The architecture's
+    KB box is service-shaped, so favour the service rows unless you have a reason to own the pipeline.</p>
+    <div class="tbl-scroll">
+      <table class="cmp">
+        <thead><tr><th>Tool</th><th>Shape</th><th>Best for</th><th>Integration &amp; trade-off</th></tr></thead>
+        <tbody>
+          <tr class="top"><td>LightRAG <span class="star">★</span></td><td>service <span class="note">(+SDK)</span></td><td>graph-RAG that drops straight into every other layer</td><td>the <span class="m">lightrag-server</span> ships a REST API, a community MCP bridge, <em>and</em> an Ollama-compatible endpoint the chat shell calls as if it were a model. Consumes OpenAI-compatible LLM/embeddings, so it sits behind LiteLLM; pluggable backends (Postgres, Neo4j, Qdrant, Milvus, Redis, Faiss…) become the vector/graph stores of Fig. 2. Incremental updates, ~70–90% of heavyweight GraphRAG quality at a fraction of the cost; weaker on global "themes across all docs" queries. MIT.</td></tr>
+          <tr class="top"><td>R2R <span class="star">★</span></td><td>service</td><td>chunk-RAG KB box with the least glue</td><td>full ingest→retrieval pipeline behind REST + MCP out of the box; matches the service-with-an-API role directly. Pick over LightRAG when you don't want a graph layer.</td></tr>
+          <tr><td>RAGFlow</td><td>service</td><td>messy documents — tables, scans, layout</td><td>deployable with API; strong complex-document extraction and a visual pipeline. Opinionated, heavier footprint.</td></tr>
+          <tr><td>LlamaIndex</td><td>library</td><td>maximum control over retrieval quality</td><td>most retrieval-focused framework; 150+ connectors, property-graph store. <b>You build:</b> the service shell + retrieval API/MCP, and a graph-extraction/incremental-update path comparable to LightRAG's — the ingestion primitives exist but the assembled pipeline does not.</td></tr>
+          <tr><td>Haystack</td><td>library</td><td>production pipelines in regulated settings</td><td>modular, disciplined, built-in eval, Apache 2.0. <b>You build:</b> the hosting process and the API/MCP surface; pipeline definitions are first-class but not a running service.</td></tr>
+          <tr><td>LangChain / LangGraph</td><td>library</td><td>agent orchestration where RAG is one part</td><td>largest ecosystem; LangGraph for agent loops, LangSmith for tracing. <b>You build:</b> essentially the whole KB — ingestion, storage wiring, retrieval logic, <em>and</em> the API/MCP surface. Not a KB by itself; abstraction sprawl if retrieval is all you need.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="pick"><span class="lbl">Pick</span><b>LightRAG</b> — it is the rare KB that already speaks all three integration directions: REST/MCP/Ollama out to the chat shell and eval bench, OpenAI-compatible in to the gateway, pluggable drivers down to the stores. That is the "seamless integration" the rest of the diagram assumes, with near-zero glue. Use <b>R2R</b> if you don't want a graph layer. Drop to a <b>library</b> (LlamaIndex) only when you need control the services won't give you — and budget for the service shell + extraction pipeline you'll then own. For extraction quality beyond LightRAG: Microsoft GraphRAG (hierarchical communities, costly to re-index) or Graphiti (temporal / agent-memory graphs).</p>
+  </div>
+
+  <!-- Framework vs service -->
+  <div class="layer">
+    <h3><span class="role">Cross-cutting</span> framework vs service — what you hand-build</h3>
+    <p class="sub">A framework/library only becomes a layer once it runs as a process and speaks one of the three protocol
+    families to its neighbours. Picking a library is choosing to build that adapter — and any pipeline stage the library
+    omits. This is the hidden cost behind "just use LlamaIndex." The deployable services above already pay it.</p>
+    <div class="tbl-scroll">
+      <table class="cmp">
+        <thead><tr><th>If you pick…</th><th>Layer</th><th>What you still hand-build</th><th>Adapter to expose</th></tr></thead>
+        <tbody>
+          <tr><td>LlamaIndex</td><td>knowledge base</td><td>service shell, graph-extraction + incremental-update pipeline (LightRAG-equivalent), result fusion/ranking</td><td>retrieval REST API or MCP server (consumers expect protocol B)</td></tr>
+          <tr><td>Haystack</td><td>knowledge base</td><td>hosting process around your pipelines, persistence wiring</td><td>retrieval REST API or MCP server</td></tr>
+          <tr><td>LangChain / LangGraph</td><td>KB &amp; agent loop</td><td>ingestion, storage wiring, retrieval logic — the full KB; agent state if used as the agent</td><td>retrieval API/MCP for the KB; OpenAI-compatible <span class="m">/v1</span> if the agent is a callable backend</td></tr>
+          <tr><td>DeepEval / Ragas</td><td>eval bench</td><td>the bench itself: golden datasets, the run loop, CI wiring, and the feedback into eval→fine-tune→redeploy</td><td>none outbound — it <em>calls</em> the KB (protocol B) and gateway (protocol A); it is invoked, not served</td></tr>
+          <tr class="top"><td>LightRAG / R2R / RAGFlow</td><td>knowledge base</td><td>config + control-plane wiring only</td><td>already ships REST + MCP (LightRAG adds Ollama-compat) — nothing to build</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="pick"><span class="lbl">Rule</span>Ask of every candidate: <b>does it ship an API surface, or is it a library I import?</b> A library means you own a long-lived service, its protocol adapter, and the pipeline gaps — often more work than the layer it's "providing." Eval frameworks are the exception: the bench is meant to be code you run, so DeepEval/Ragas-as-libraries is the correct shape, not a gap.</p>
+  </div>
+
+  <!-- Eval bench -->
+  <div class="layer">
+    <h3><span class="role">Eval bench</span> offline scoring of retrieval + generation</h3>
+    <p class="sub">Two complementary jobs: metric scoring (is the answer grounded, relevant, complete?) and tracing /
+    observability (where did the pipeline fail?). Most production teams run one of each.</p>
+    <div class="tbl-scroll">
+      <table class="cmp">
+        <thead><tr><th>Tool</th><th>Job</th><th>Best for</th><th>Deciding trade-off</th></tr></thead>
+        <tbody>
+          <tr class="top"><td>Ragas <span class="star">★</span></td><td>metrics</td><td>RAG-specific scoring, quick setup</td><td>reference-free metrics for the four core dimensions (faithfulness, answer relevancy, context precision/recall); the academic standard. No built-in observability — pair it.</td></tr>
+          <tr class="top"><td>DeepEval <span class="star">★</span></td><td>metrics + CI</td><td>pytest-style gates in CI/CD</td><td>50+ metrics across RAG, agents, multi-turn, MCP, safety; the broadest library with the strongest CI integration.</td></tr>
+          <tr><td>Phoenix (Arize)</td><td>tracing</td><td>open-source, self-hosted observability</td><td>span-level tracing of the live pipeline; pairs with a metrics framework rather than replacing it.</td></tr>
+          <tr><td>Langfuse</td><td>tracing</td><td>production monitoring alongside the gateway</td><td>integrates natively with LiteLLM, so gateway-level cost/latency correlates with app traces. Self-hostable.</td></tr>
+          <tr><td>MLflow</td><td>orchestration</td><td>one harness over many scorers</td><td>runs Ragas, DeepEval, Phoenix, TruLens as pluggable scorers under one Apache-2.0 roof; extra layer to operate.</td></tr>
+          <tr><td>TruLens</td><td>metrics + tracing</td><td>Snowflake-embedded teams</td><td>OpenTelemetry tracing + feedback functions; roadmap now tilts toward the Snowflake ecosystem.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="pick"><span class="lbl">Pick</span><b>Ragas</b> or <b>DeepEval</b> for the metric scores the eval→fine-tune→redeploy loop runs on (DeepEval if you want CI gates), plus <b>Langfuse</b> or <b>Phoenix</b> for tracing. Langfuse is the natural partner here because it reads the LiteLLM gateway directly.</p>
+  </div>
+
+  <!-- Chat shell -->
+  <div class="layer">
+    <h3><span class="role">Chat client / agent</span> the interactive surface</h3>
+    <p class="sub">A frontend, not an engine — it talks to the gateway for generation and the KB for retrieval. Two axes
+    decide it: local-model polish vs. multi-provider breadth, and — your requirement — how it takes plugins. The portable
+    answer to extensibility is <b>MCP</b>: build an extension once as an MCP tool server and every shell below that speaks
+    MCP can load it, so you avoid one shell's proprietary plugin format.</p>
+    <div class="tbl-scroll">
+      <table class="cmp">
+        <thead><tr><th>Tool</th><th>Plugin / extension model</th><th>Best for</th><th>Deciding trade-off</th></tr></thead>
+        <tbody>
+          <tr class="top"><td>Open WebUI <span class="star">★</span></td><td>Python Tools + Functions (pipe/filter/action), Pipelines, OpenAPI tool servers, MCP, community hub</td><td>richest extensibility, local models</td><td>the closest match to (and arguably beyond) TypingMind-style plugins — full-Python tools/functions plus an importable hub of tools, functions and prompts. RBAC, ~136K stars. Ollama-centric, lighter multi-provider story.</td></tr>
+          <tr class="top"><td>LibreChat <span class="star">★</span></td><td>Plugins/Tools, Actions (OpenAPI, GPT-style), MCP, code interpreter</td><td>multi-provider, agents, enterprise auth</td><td>MCP tool servers "just work"; Actions let you add a custom tool from an OpenAPI spec without code. Mixes local + cloud in one thread; OAuth/Azure AD. MIT.</td></tr>
+          <tr><td>AnythingLLM</td><td>Custom agent skills, MCP</td><td>document workspace / RAG-first</td><td>extend via agent skills and MCP; workspace-scoped. Reach for it when the product <em>is</em> document Q&amp;A.</td></tr>
+          <tr><td>TypingMind</td><td>Plugin marketplace + custom JS/HTTP plugins, prompt library, MCP</td><td>the plugin UX you referenced, BYOK</td><td>the reference for this feature, self-hostable (TypingMind Custom) — but commercial/licensed, not open-source. Use it if its exact plugin store is the requirement; otherwise OSS shells now cover the same ground.</td></tr>
+          <tr><td>LobeChat / Cherry Studio / 5ire</td><td>Plugin/agent UX, MCP</td><td>desktop-first, multi-agent</td><td>all MCP-capable; heavier or more desktop-bound than a plain web shell.</td></tr>
+          <tr><td>Jan / GPT4All</td><td>MCP (Jan), limited</td><td>desktop-first individuals</td><td>local models without a web app; thinner extension story, not for multi-user.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="pick"><span class="lbl">Pick</span><b>Open WebUI</b> if extensibility and local-model polish lead — its Tools/Functions/Pipelines + hub is the fullest TypingMind-equivalent in open source. <b>LibreChat</b> when the client must run an agent loop, mix providers, or carry enterprise auth; its OpenAPI <em>Actions</em> + MCP cover most plugin needs. Either way, <b>author your own extensions as MCP servers</b> — that keeps them portable across shells and reusable by the agent loop and KB, instead of locking them to one UI's plugin API. TypingMind itself only if its specific marketplace is non-negotiable and a commercial license is acceptable.</p>
+  </div>
+
+  <!-- Commodity stores -->
+  <div class="layer">
+    <h3><span class="role">Object &amp; metadata stores</span> commodity backing stores</h3>
+    <p class="sub">The least contested layer — established infrastructure with no AI-specific decision. Pick by deployment
+    shape, not features.</p>
+    <div class="tbl-scroll">
+      <table class="cmp">
+        <thead><tr><th>Tool</th><th>Role</th><th>Best for</th><th>Deciding trade-off</th></tr></thead>
+        <tbody>
+          <tr class="top"><td>Filesystem <span class="star">★</span></td><td>object store</td><td>single-host, embedded KB</td><td>zero infrastructure for raw docs + chunk text when everything is co-located.</td></tr>
+          <tr class="top"><td>MinIO <span class="star">★</span></td><td>object store</td><td>self-hosted S3-compatible at LAN/cluster scale</td><td>drop-in S3 API on-prem; run it when the object store outgrows a local disk.</td></tr>
+          <tr><td>SeaweedFS</td><td>object store</td><td>large numbers of small objects</td><td>efficient for chunk-heavy corpora; smaller ecosystem than MinIO.</td></tr>
+          <tr class="top"><td>SQLite <span class="star">★</span></td><td>metadata DB</td><td>embedded, single-binary KB</td><td>in-process, zero-ops collection/chunk metadata; one file.</td></tr>
+          <tr class="top"><td>PostgreSQL <span class="star">★</span></td><td>metadata DB</td><td>networked / shared KB service</td><td>the networked default; with pgvector it can also be the vector store, collapsing two boxes into one.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="pick"><span class="lbl">Pick</span>Single-binary KB → <b>filesystem</b> + <b>SQLite</b>. Shared service → <b>MinIO</b> + <b>PostgreSQL</b>, and let pgvector double as the vector store. These are role choices that track the deployment column of Fig. 3, nothing more.</p>
+  </div>
+
+  <h3>Reference stacks</h3>
+  <p>Two coherent end-to-end picks from the tables above, at the two deployment poles.</p>
+  <ul>
+    <li><b>Single-host / embedded</b> — Ollama · LiteLLM · LanceDB · Kuzu · LightRAG-server (graph-RAG, REST+MCP+Ollama-compat in one binary) · filesystem + SQLite · Ragas + Langfuse · Open WebUI with MCP-authored plugins. One trust boundary, near-zero networked dependencies, runs on a workstation.</li>
+    <li><b>Shared LAN service</b> — vLLM/SGLang · LiteLLM · Qdrant · Neo4j · LightRAG-server (Postgres/Qdrant/Neo4j drivers) or a LlamaIndex-built service if you need the control · MinIO + PostgreSQL · DeepEval + Phoenix · LibreChat with MCP tools. Scales to a team and multi-tenant traffic; the gateway is still the only egress.</li>
+  </ul>
+  <p class="note">Every tool above implements a role already drawn in Figs. 1–3 and speaks one of the three
+  protocol families. None of them is the control plane that binds collection→embedder, routes
+  per-message to a collection+model, enforces egress at the gateway, and drives the eval loop — that glue
+  remains the custom surface from "Build vs adopt." Adopt the rows; build only the wiring.</p>
+</section>
+
+</div>
+</body>
+</html>
