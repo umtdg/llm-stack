@@ -3,3 +3,8 @@
 
 # clone of sources of services
 .repositories/
+
+# nix build output / direnv
+result
+result-*
+.direnv/
