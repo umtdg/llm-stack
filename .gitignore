@@ -1,8 +1,4 @@
-# data directory
-.data/
-
-# clone of sources of services
-.repositories/
+models
 
 # nix build output / direnv
 result
